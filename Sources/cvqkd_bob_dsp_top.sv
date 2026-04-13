@@ -49,7 +49,7 @@ module cvqkd_bob_dsp_top #(
     // 2. INSTANCIACIÓN DE LOS MÓDULOS (La Placa Base)
     // =========================================================================
 
-    // 2.1. El Guardagujas (Framer / Demux)
+    // 2.1. Framer / Demux
     demux_framer #(
         .DATA_WIDTH(ADC_WIDTH)
     ) inst_demux (
@@ -64,7 +64,7 @@ module cvqkd_bob_dsp_top #(
         .fifo_we(demux_to_fifo_we)
     );
 
-    // 2.2. La Sala de Espera (FIFO de 64 posiciones)
+    // 2.2. FIFO de 64 posiciones
     sync_fifo #(
         .DATA_WIDTH(ADC_WIDTH * 2), // 32 bits
         .DEPTH(64)
@@ -80,8 +80,6 @@ module cvqkd_bob_dsp_top #(
     );
 
     // 2.3. CORDIC 1: Vectorización (IP de Vivado)
-    // 2.3. CORDIC 1: Vectorización (IP de Vivado)
-    // ¡CORRECCIÓN!: El bus es de 48 bits {Fase, Magnitud}
     logic [47:0] cordic1_dout_tdata;
 
     cordic_vect_ip inst_cordic_vect (
@@ -94,10 +92,8 @@ module cvqkd_bob_dsp_top #(
         .m_axis_dout_tvalid(cordic1_to_interp_valid),
         .m_axis_dout_tdata(cordic1_dout_tdata) 
     );
-
-    // ¡EL ARREGLO!: Extraemos la Fase, que está en la parte ALTA [47:24]
-    // Nos quedamos con los 18 bits útiles [41:24]
-    assign cordic1_to_interp_theta = cordic1_dout_tdata[41:24];
+    
+    assign cordic1_to_interp_theta = cordic1_dout_tdata[41:24]; // Nos quedamos con los 18 bits útiles [41:24]
     
     // 2.4. El Cerebro: Interpolador de Fase
     phase_interpolator #(
@@ -133,24 +129,12 @@ module cvqkd_bob_dsp_top #(
             {8{fifo_to_cordic2_data[15]}}, fifo_to_cordic2_data[15:0]   // 24 bits para P
         }),
         
-        .m_axis_dout_tvalid(cordic2_to_gain_valid),
+        .m_axis_dout_tvalid(valid_out),
         .m_axis_dout_tdata(cordic2_dout_tdata)
     );
 
-    // 2.6. Compensador de Ganancia
-    gain_compensation #(
-        .IN_WIDTH(DSP_WIDTH),
-        .OUT_WIDTH(ADC_WIDTH)
-    ) inst_gain_comp (
-        .clk(clk),
-        .rst(rst),
-        // Extraemos los 18 bits útiles de P y Q de dentro del monstruo de 48 bits
-        .p_in(cordic2_dout_tdata[17:0]),  // Bits de la parte P
-        .q_in(cordic2_dout_tdata[41:24]), // Bits de la parte Q
-        .valid_in(cordic2_to_gain_valid),
-        .p_out(p_out),
-        .q_out(q_out),
-        .valid_out(valid_out)
-    );
+
+    assign p_out = cordic2_dout_tdata[17:0];
+    assign q_out = cordic2_dout_tdata[41:24];
 
 endmodule
