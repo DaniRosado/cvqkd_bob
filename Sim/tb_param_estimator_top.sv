@@ -3,143 +3,131 @@
 module tb_param_estimator_top();
 
     // =========================================================================
-    // 1. PARÁMETROS Y SEÑALES
+    // PARÁMETROS Y SEÑALES
     // =========================================================================
-    localparam TEST_SAMPLES = 100;
+    localparam TEST_SAMPLES = 26112;
+    localparam NUM_BOB_RAM  = 52224; // Tamaño total de la RAM de Bob
     
-    logic clk;
-    logic rst;
-    logic start;
-    logic ping_pong_bit;
-    logic done;
+    logic clk, rst, start, ping_pong_bit, done;
     
-    // Cables hacia las memorias
-    logic [14:0] ptr_addr;
-    logic [15:0] ptr_data;
+    // Buses de Memoria
+    logic [14:0] ptr_addr;   logic [15:0] ptr_data;
+    logic [16:0] bob_addr;   logic [31:0] bob_data;
+    logic [14:0] alice_addr; logic [31:0] alice_data;
     
-    logic [16:0] bob_addr;
-    logic [31:0] bob_data;
+    // Calibración
+    logic signed [31:0] calib_VarA;
     
-    logic [14:0] alice_addr;
-    logic [31:0] alice_data;
-    
-    // Resultados
-    logic signed [63:0] var_P_sum_sq, var_P_sum_val, cov_P_sum_cov, cov_P_sum_alice;
-    logic signed [63:0] var_Q_sum_sq, var_Q_sum_val, cov_Q_sum_cov, cov_Q_sum_alice;
+    // Salidas Finales (Q16.16)
+    logic signed [31:0] T_est, T_sqrt_est, sigma_sq_est, sigma_est;
 
     // =========================================================================
-    // 2. ARRAYS DE MEMORIA (EMULACIÓN DE BRAMs)
+    // ARRAYS DE MEMORIA (Emulación de BRAMs)
     // =========================================================================
     logic [15:0] mem_ptr   [0:TEST_SAMPLES-1];
-    logic [31:0] mem_bob   [0:199]; // 200 posiciones
+    logic [31:0] mem_bob   [0:NUM_BOB_RAM-1]; 
     logic [31:0] mem_alice [0:TEST_SAMPLES-1];
-    logic [63:0] mem_expected [0:7];
+    logic [31:0] mem_expected [0:3]; // T, sqrt(T), sigma_sq, sigma
 
     // =========================================================================
-    // 3. INSTANCIACIÓN DEL DUT (Reemplazamos 26112 por 100)
+    // INSTANCIA DEL TOP-LEVEL
     // =========================================================================
-    param_estimator_top #(
-        .NUM_SAMPLES(TEST_SAMPLES)
-    ) dut (
+    param_estimator_top #(.NUM_SAMPLES(TEST_SAMPLES)) dut (
         .clk(clk), .rst(rst),
         .start(start), .ping_pong_bit(ping_pong_bit), .done(done),
+        
         .ptr_addr(ptr_addr), .ptr_data(ptr_data),
         .bob_addr(bob_addr), .bob_data(bob_data),
         .alice_addr(alice_addr), .alice_data(alice_data),
         
-        .var_P_sum_sq(var_P_sum_sq), .var_P_sum_val(var_P_sum_val),
-        .cov_P_sum_cov(cov_P_sum_cov), .cov_P_sum_alice(cov_P_sum_alice),
+        .calib_VarA(calib_VarA),
         
-        .var_Q_sum_sq(var_Q_sum_sq), .var_Q_sum_val(var_Q_sum_val),
-        .cov_Q_sum_cov(cov_Q_sum_cov), .cov_Q_sum_alice(cov_Q_sum_alice)
+        .T_estimated(T_est),
+        .T_sqrt_estimated(T_sqrt_est),
+        .sigma_sq_estimated(sigma_sq_est),
+        .sigma_estimated(sigma_est)
     );
 
     // =========================================================================
-    // 4. GENERACIÓN DE RELOJ Y EMULACIÓN DE LATENCIA BRAM (1 CICLO)
+    // GENERACIÓN DE RELOJ Y LOGICA DE RAM
     // =========================================================================
     initial begin
-        clk = 0;
-        forever #5 clk = ~clk;
+        clk = 0; forever #5 clk = ~clk;
     end
 
-    // ¡ESTO ES VITAL! Simulamos el retraso físico de lectura de una BRAM real
+    // Emulación de latencia de 1 ciclo (típica de BRAM)
     always_ff @(posedge clk) begin
         ptr_data   <= mem_ptr[ptr_addr];
-        bob_data   <= mem_bob[bob_addr[15:0]]; // Ignoramos el bit de ping_pong para el test
+        bob_data   <= mem_bob[bob_addr[15:0]]; // Usamos solo 16 bits para indexar
         alice_data <= mem_alice[alice_addr];
     end
 
     // =========================================================================
-    // 5. PROCESO PRINCIPAL DE TEST
+    // PROCEDIMIENTO DE TEST
     // =========================================================================
-    
-    integer errores = 0;
-    
     initial begin
-        // A) CARGAR ARCHIVOS (¡Ojo con la ruta!)
+        // 1. Carga de datos generados por MATLAB
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/ptr_ram.txt", mem_ptr);
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/bob_ram.txt", mem_bob);
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/alice_ram.txt", mem_alice);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/expected_results.txt", mem_expected);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/expected_llr_math.txt", mem_expected);
 
-        // B) ESTADO INICIAL
-        rst           = 1'b1;
-        start         = 1'b0;
-        ping_pong_bit = 1'b0;
+        // 2. Configuración Inicial
+        rst = 1; start = 0; ping_pong_bit = 0;
+        calib_VarA = 32'd40000; // 4.0 SNU * 10000
         
-        #20;
-        rst = 1'b0;
+        #50 rst = 0;
         
-        $display("---------------------------------------------------");
-        $display("[INFO] Iniciando Simulacion del Acelerador Hardware...");
-        $display("[INFO] Muestras configuradas: %0d", TEST_SAMPLES);
-
-        // C) DISPARO DE LA FSM
-        @(posedge clk);
-        start = 1'b1; // ¡Damos la orden!
+        $display("\n=======================================================");
+        $display("[INFO] Iniciando Estimador de Parametros (Escala Real)");
+        $display("[INFO] Procesando %0d muestras...", TEST_SAMPLES);
         
-        // D) ESPERAR A QUE TERMINE
+        // 3. Disparo del sistema
+        @(posedge clk) start = 1'b1;
+        @(posedge clk) start = 1'b0;
+        
+        // 4. Espera del resultado
+        // Tardará ~26.000 ciclos en procesar + ~60 ciclos de pipeline matemático
         wait(done == 1'b1);
-        start = 1'b0; // Bajamos la orden
         
-        $display("[INFO] FSM ha levantado la bandera 'DONE'.");
-        $display("[INFO] Validando los 8 acumuladores...");
+        $display("[INFO] Estimacion completada.");
 
-        // E) COMPROBACIÓN CONTRA EL GOLDEN MODEL
-        // Creamos una variable de error para saber si hubo algun fallo
+        // 5. Verificación de Resultados
+        comparar_resultados();
         
-        
-        // P
-        if (var_P_sum_sq    !== mem_expected[0]) errores++;
-        if (var_P_sum_val   !== mem_expected[1]) errores++;
-        if (cov_P_sum_cov   !== mem_expected[2]) errores++;
-        if (cov_P_sum_alice !== mem_expected[3]) errores++;
-        
-        // Q
-        if (var_Q_sum_sq    !== mem_expected[4]) errores++;
-        if (var_Q_sum_val   !== mem_expected[5]) errores++;
-        if (cov_Q_sum_cov   !== mem_expected[6]) errores++;
-        if (cov_Q_sum_alice !== mem_expected[7]) errores++;
-
-        $display(" ");
-        if (errores == 0) begin
-            $display("=================================================");
-            $display("    [ OK ]  ¡SISTEMA MATEMATICO PERFECTO! ");
-            $display("            La FSM y el Pipeline DSP coinciden");
-            $display("            al 100%% con el Golden Model.");
-            $display("=================================================");
-        end else begin
-            $display("=================================================");
-            $display("    [ X ]   ¡ERROR DE SINCRONIZACION! ");
-            $display("            Algunos acumuladores no coinciden.");
-            $display("=================================================");
-            // Imprimimos uno para ver el error
-            $display("Esperado P_Sq: %h", mem_expected[0]);
-            $display("Obtenido P_Sq: %h", var_P_sum_sq);
-        end
-        
-        $display("---------------------------------------------------");
-        $finish;
+        #100 $finish;
     end
+
+    // =========================================================================
+    // TAREA DE COMPARACIÓN
+    // =========================================================================
+    task comparar_resultados();
+        integer err [4];
+        integer i;
+        
+        err[0] = T_est        - mem_expected[0];
+        err[1] = T_sqrt_est   - mem_expected[1];
+        err[2] = sigma_sq_est - mem_expected[2];
+        err[3] = sigma_est    - mem_expected[3];
+
+        // Valor absoluto de los errores
+        for(i=0; i<4; i++) if(err[i] < 0) err[i] = -err[i];
+
+        $display("-------------------------------------------------------------------------");
+        $display("    PARAMETRO     | FPGA (Q16.16) | MATLAB (Ideal) | ERROR (Bits) ");
+        $display("------------------+---------------+----------------+------------------");
+        $display(" Ganancia T_est   |  %12d |   %12d |   %8d", T_est,        mem_expected[0], err[0]);
+        $display(" Raiz Sqrt(T)     |  %12d |   %12d |   %8d", T_sqrt_est,   mem_expected[1], err[1]);
+        $display(" Varianza Sigma^2 |  %12d |   %12d |   %8d", sigma_sq_est, mem_expected[2], err[2]);
+        $display(" Desviacion Sigma |  %12d |   %12d |   %8d", sigma_est,    mem_expected[3], err[3]);
+        $display("-------------------------------------------------------------------------");
+
+        if (err[0] < 5 && err[1] < 5 && err[2] < 5 && err[3] < 5) begin
+            $display("  [ OK ] ¡SISTEMA INTEGRADO VERIFICADO CON EXITO! ");
+        end else begin
+            $display("  [ X ]  ¡FALLO DE TOLERANCIA DETECTADO! ");
+        end
+        $display("=======================================================\n");
+    endtask
 
 endmodule

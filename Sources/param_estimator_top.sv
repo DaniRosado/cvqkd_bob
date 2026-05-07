@@ -6,137 +6,108 @@ module param_estimator_top #(
     input  logic        clk,
     input  logic        rst,
     
-    // =========================================================================
-    // CONTROL DESDE/HACIA LA CPU
-    // =========================================================================
     input  logic        start,
-    input  logic        ping_pong_bit, // 0 = Mitad A, 1 = Mitad B
+    input  logic        ping_pong_bit,
     output logic        done,
     
-    // =========================================================================
-    // INTERFAZ CON LA BRAM DE DIRECCIONES (Pointer RAM)
-    // =========================================================================
     output logic [14:0] ptr_addr,
     input  logic [15:0] ptr_data,
     
-    // =========================================================================
-    // INTERFAZ CON LA BRAM DE BOB (Datos limpios del canal cuántico)
-    // =========================================================================
     output logic [16:0] bob_addr,
-    input  logic [31:0] bob_data,      // {Q_B [31:16], P_B [15:0]}
+    input  logic [31:0] bob_data,
     
-    // =========================================================================
-    // INTERFAZ CON LA BRAM DE ALICE (Datos recibidos por red clásica)
-    // =========================================================================
     output logic [14:0] alice_addr,
-    input  logic [31:0] alice_data,    // {Q_A [31:16], P_A [15:0]}
+    input  logic [31:0] alice_data,
     
-    // =========================================================================
-    // RESULTADOS MATEMÁTICOS (Hacia los registros AXI de la CPU)
-    // =========================================================================
-    // Cuadraturas P
-    output logic signed [63:0] var_P_sum_sq,
-    output logic signed [63:0] var_P_sum_val,
-    output logic signed [63:0] cov_P_sum_cov,
-    output logic signed [63:0] cov_P_sum_alice,
+    // =================================================================
+    // ENTRADAS DE CALIBRACIÓN (Reducidas solo a lo necesario para LLR)
+    // =================================================================
+    input  logic signed [31:0] calib_VarA,  // Varianza de Alice
     
-    // Cuadraturas Q
-    output logic signed [63:0] var_Q_sum_sq,
-    output logic signed [63:0] var_Q_sum_val,
-    output logic signed [63:0] cov_Q_sum_cov,
-    output logic signed [63:0] cov_Q_sum_alice
+    // =================================================================
+    // SALIDAS ESTIMADAS (Q16.16) DIRECTAS HACIA EL DECODIFICADOR LDPC
+    // =================================================================
+    output logic signed [31:0] T_estimated,        // Sqrt(T*eta)
+    output logic signed [31:0] T_sqrt_estimated,   // Sqrt(Sqrt(T*eta))
+    output logic signed [31:0] sigma_sq_estimated, // Varianza de Bob
+    output logic signed [31:0] sigma_estimated     // Desviación estándar
 );
 
-    // =========================================================================
-    // 1. DESEMPAQUETADO DE DATOS
-    // =========================================================================
-    logic signed [15:0] bob_q, bob_p;
-    logic signed [15:0] alice_q, alice_p;
+    // Desempaquetado de datos
+    logic signed [15:0] bob_q, bob_p, alice_q, alice_p;
+    assign {bob_q, bob_p}     = bob_data;
+    assign {alice_q, alice_p} = alice_data;
 
-    assign bob_q   = bob_data[31:16];
-    assign bob_p   = bob_data[15:0];
-    assign alice_q = alice_data[31:16];
-    assign alice_p = alice_data[15:0];
+    // Cables de control interno de la FSM
+    logic mac_clear, mac_enable, start_math, math_done;
 
-    // =========================================================================
-    // 2. CABLES DE CONTROL INTERNO
-    // =========================================================================
-    logic mac_clear;
-    logic mac_enable;
+    // =================================================================
+    // CABLES INTERNOS DE 64 BITS (Salida de los MACs)
+    // =================================================================
+    logic signed [63:0] var_P_sum_sq, var_P_sum_val, cov_P_sum_cov, cov_P_sum_alice;
+    logic signed [63:0] var_Q_sum_sq, var_Q_sum_val, cov_Q_sum_cov, cov_Q_sum_alice;
+    logic signed [63:0] ignore_cov_bob_p, ignore_cov_bob_q;
 
-    // (Nota: Los módulos de covarianza también escupen la suma simple de Bob, 
-    // pero como el módulo de varianza ya nos la da en 'var_P_sum_val', 
-    // dejamos estos cables al aire para ahorrar pines. Vivado los optimizará).
-    logic signed [63:0] ignore_cov_bob_p;
-    logic signed [63:0] ignore_cov_bob_q;
-
-    // =========================================================================
-    // 3. INSTANCIACIÓN DE LA MÁQUINA DE ESTADOS (El Cerebro)
-    // =========================================================================
-    fsm_estimator #(
-        .NUM_SAMPLES(NUM_SAMPLES)
-    ) fsm_inst (
-        .clk(clk),
-        .rst(rst),
-        .start(start),
-        .ping_pong_bit(ping_pong_bit),
+    // 1. EL CEREBRO (Máquina de Estados)
+    fsm_estimator #(.NUM_SAMPLES(NUM_SAMPLES)) fsm_inst (
+        .clk(clk), .rst(rst),
+        .start(start), .ping_pong_bit(ping_pong_bit),
+        .start_math(start_math), .math_done(math_done), 
         .done(done),
-        .ptr_addr(ptr_addr),
-        .ptr_data(ptr_data),
-        .bob_addr(bob_addr),
-        .alice_addr(alice_addr),
-        .mac_clear(mac_clear),
-        .mac_enable(mac_enable)
+        .ptr_addr(ptr_addr), .ptr_data(ptr_data),
+        .bob_addr(bob_addr), .alice_addr(alice_addr),
+        .mac_clear(mac_clear), .mac_enable(mac_enable)
     );
 
-    // =========================================================================
-    // 4. INSTANCIACIÓN DE LOS ACELERADORES MATEMÁTICOS PARA 'P'
-    // =========================================================================
+    // 2. ACELERADORES P (Cuadratura In-Phase)
     mac_variance var_P_inst (
-        .clk(clk),
-        .rst(rst),
-        .clear(mac_clear),
-        .enable(mac_enable),
-        .data_in(bob_p),
-        .sum_sq(var_P_sum_sq),
-        .sum_val(var_P_sum_val)
+        .clk(clk), .rst(rst), .clear(mac_clear), .enable(mac_enable), .data_in(bob_p),
+        .sum_sq(var_P_sum_sq), .sum_val(var_P_sum_val)
     );
-
     mac_covariance cov_P_inst (
-        .clk(clk),
-        .rst(rst),
-        .clear(mac_clear),
-        .enable(mac_enable),
-        .data_bob(bob_p),
-        .data_alice(alice_p),
-        .sum_cov(cov_P_sum_cov),
-        .sum_val_bob(ignore_cov_bob_p),
-        .sum_val_alice(cov_P_sum_alice)
+        .clk(clk), .rst(rst), .clear(mac_clear), .enable(mac_enable),
+        .data_bob(bob_p), .data_alice(alice_p),
+        .sum_cov(cov_P_sum_cov), .sum_val_bob(ignore_cov_bob_p), .sum_val_alice(cov_P_sum_alice)
     );
 
-    // =========================================================================
-    // 5. INSTANCIACIÓN DE LOS ACELERADORES MATEMÁTICOS PARA 'Q'
-    // =========================================================================
+    // 3. ACELERADORES Q (Cuadratura Quadrature)
     mac_variance var_Q_inst (
-        .clk(clk),
-        .rst(rst),
-        .clear(mac_clear),
-        .enable(mac_enable),
-        .data_in(bob_q),
-        .sum_sq(var_Q_sum_sq),
-        .sum_val(var_Q_sum_val)
+        .clk(clk), .rst(rst), .clear(mac_clear), .enable(mac_enable), .data_in(bob_q),
+        .sum_sq(var_Q_sum_sq), .sum_val(var_Q_sum_val)
+    );
+    mac_covariance cov_Q_inst (
+        .clk(clk), .rst(rst), .clear(mac_clear), .enable(mac_enable),
+        .data_bob(bob_q), .data_alice(alice_q),
+        .sum_cov(cov_Q_sum_cov), .sum_val_bob(ignore_cov_bob_q), .sum_val_alice(cov_Q_sum_alice)
     );
 
-    mac_covariance cov_Q_inst (
-        .clk(clk),
+    // =================================================================
+    // 4. BLOQUE MATEMÁTICO DE RECONCILIACIÓN (LLR Math Unit)
+    // =================================================================
+    LLR_math_unit math_unit_inst (
+        .clk(clk), 
         .rst(rst),
-        .clear(mac_clear),
-        .enable(mac_enable),
-        .data_bob(bob_q),
-        .data_alice(alice_q),
-        .sum_cov(cov_Q_sum_cov),
-        .sum_val_bob(ignore_cov_bob_q),
-        .sum_val_alice(cov_Q_sum_alice)
+        .start_calc(start_math), 
+        
+        // Sumatorios P
+        .sum_sq_P_B(var_P_sum_sq), .sum_P_B(var_P_sum_val), 
+        .sum_cov_P(cov_P_sum_cov), .sum_P_A(cov_P_sum_alice),
+        
+        // Sumatorios Q
+        .sum_sq_Q_B(var_Q_sum_sq), .sum_Q_B(var_Q_sum_val), 
+        .sum_cov_Q(cov_Q_sum_cov), .sum_Q_A(cov_Q_sum_alice),
+        
+        // Entrada de Calibración
+        .calib_VarA(calib_VarA), 
+        
+        // Salidas hacia el bloque LDPC
+        .T_final(T_estimated),
+        .T_sqrt(T_sqrt_estimated),
+        .sigma_sq(sigma_sq_estimated),
+        .sigma(sigma_estimated),
+        
+        // Feedback para la FSM
+        .data_ready(math_done)  
     );
 
 endmodule
