@@ -6,7 +6,8 @@ module tb_cvqkd_bob_dsp_top();
     // 1. Declaración de Parámetros y Señales
     // =========================================================================
     localparam ADC_WIDTH = 16;
-    localparam NUM_SAMPLES = 1601; // 100 tramas * 16 muestras
+    localparam NUM_SAMPLES_IN = 55713;  // Toda la secuencia de la fibra
+    localparam NUM_SAMPLES_OUT = 52230; // Solo las muestras de datos recuperadas
 
     logic clk;
     logic rst;
@@ -20,15 +21,16 @@ module tb_cvqkd_bob_dsp_top();
     logic                        valid_out;
 
     // Memorias para leer los vectores de MATLAB
-    logic [31:0] memoria_in [0:NUM_SAMPLES-1];
-    logic [31:0] memoria_expected [0:NUM_SAMPLES-1]; // NUEVO: Para el Golden Model
+    logic [31:0] memoria_in [0:NUM_SAMPLES_IN-1];
+    logic [31:0] memoria_expected [0:NUM_SAMPLES_OUT-1]; // NUEVO: Para el Golden Model
     
     // Identificador del archivo de salida
     integer file_out;
+    integer file_err; // Archivo para log de errores
 
     // Contadores para la autoverificación
-    integer out_counter = 0;   // Cuenta las muestras válidas que salen de Vivado (deberían ser 1500)
-    integer expected_idx = 0;  // Recorre el archivo esperado de MATLAB (va hasta 1600)
+    integer out_counter = 0;   // Cuenta las muestras válidas que salen de Vivado
+    integer expected_idx = 0;  // Recorre el archivo esperado de MATLAB
     integer error_counter = 0; // Cuenta los desajustes
 
     // Variables internas para la comparación matemática
@@ -65,6 +67,7 @@ module tb_cvqkd_bob_dsp_top();
     initial begin
         // ¡CUIDADO! Asegúrate de que las barras son las correctas '/'
         file_out = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_outputs.txt", "w");
+        file_err = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_errors.txt", "w");
         if (file_out == 0) begin
             $display("ERROR: No se pudo crear el archivo de salida.");
             $finish;
@@ -73,32 +76,40 @@ module tb_cvqkd_bob_dsp_top();
 
     always_ff @(posedge clk) begin
         if (valid_out) begin
+        
+            
             // 4.1. Guardamos el archivo igual que hacíamos antes
             $fdisplay(file_out, "%04x%04x", q_out[15:0], p_out[15:0]);
 
             // 4.2. Lógica de Autoverificación
-            // Si el índice esperado apunta al piloto (múltiplos de 16: 0, 16, 32...), lo saltamos.
-            if (expected_idx % 16 == 0) begin
-                expected_idx++; 
-            end
-
-            // Extraemos los valores esperados de la RAM del testbench
-            exp_q = memoria_expected[expected_idx][31:16];
-            exp_p = memoria_expected[expected_idx][15:0];
-
-            // Comparamos tolerando +/- 1 bit de diferencia (ruido de cuantización interno del DSP)
-            diff_p = $signed(p_out) - exp_p;
-            diff_q = $signed(q_out) - exp_q;
-
-            if (diff_p < -1 || diff_p > 1 || diff_q < -1 || diff_q > 1) begin
-                if (error_counter < 15) begin // Imprimimos solo los primeros 15 errores para no saturar la consola
-                    $display("ERROR HW -> Salida %0d: Esperado Q=%h P=%h | Vivado Q=%h P=%h", 
-                              out_counter, exp_q, exp_p, q_out[15:0], p_out[15:0]);
+            // MATLAB truncó la exportación a 52224 datos (N_BOB_DATA). 
+            // Si el DSP escupe las 52230, dejamos de comparar las últimas 6 para no leer basura.
+            if (expected_idx < 52224) begin
+                // Extraemos los valores esperados de la RAM del testbench
+                exp_q = memoria_expected[expected_idx][31:16];
+                exp_p = memoria_expected[expected_idx][15:0];
+    
+                // Comparamos tolerando +/- 1 bit de diferencia (ruido de cuantización interno del DSP)
+                diff_p = $signed(p_out) - exp_p;
+                diff_q = $signed(q_out) - exp_q;
+    
+                // NUEVO: Escribimos SIEMPRE el error en el archivo para que MATLAB lo grafique.
+                // Formato: 3 columnas separadas por espacio -> [Muestra] [Error P] [Error Q]
+                if (file_err != 0) begin
+                    $fdisplay(file_err, "%0d %0d %0d", out_counter, diff_p, diff_q);
                 end
-                error_counter++;
-            end
 
-            expected_idx++;
+                if (diff_p < -1 || diff_p > 1 || diff_q < -1 || diff_q > 1) begin
+                    if (error_counter < 15) begin // Imprimimos solo los primeros 15 errores para no saturar la consola
+                        $display("ERROR HW -> Salida %0d: Esperado Q=%h P=%h | Vivado Q=%h P=%h", 
+                                  out_counter, exp_q, exp_p, q_out[15:0], p_out[15:0]);
+                    end
+                    error_counter++;
+                end
+    
+                expected_idx++;
+            end
+            
             out_counter++;
         end
     end
@@ -107,9 +118,9 @@ module tb_cvqkd_bob_dsp_top();
     // 5. Proceso de Estímulos (Inyección de Datos)
     // =========================================================================
     initial begin
-        // Cargar archivos de MATLAB
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/input_vectors.txt", memoria_in);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/expected_outputs.txt", memoria_expected);
+        // Cargar archivos de MATLAB (los copiados a Sim)
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_raw_adc.txt", memoria_in);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_ram.txt", memoria_expected);
 
         // Estado inicial
         rst = 1'b1;
@@ -122,8 +133,8 @@ module tb_cvqkd_bob_dsp_top();
         rst = 1'b0;
         $display("--- INICIANDO SIMULACIÓN CON AUTOVERIFICACIÓN ---");
 
-        // Inyectamos los 1600 datos sin pausa
-        for (int i = 0; i < NUM_SAMPLES; i++) begin
+        // Inyectamos todos los datos de la fibra sin pausa
+        for (int i = 0; i < NUM_SAMPLES_IN; i++) begin
             @(posedge clk);
             valid_in <= 1'b1;
             q_in     <= memoria_in[i][31:16];
@@ -140,7 +151,10 @@ module tb_cvqkd_bob_dsp_top();
         repeat(100) @(posedge clk);
         
         $fclose(file_out);
-
+        if (file_err != 0) $fclose(file_err);
+        
+        
+    
         // =========================================================================
         // 6. Veredicto Final por Pantalla (El "Check")
         // =========================================================================
@@ -148,9 +162,9 @@ module tb_cvqkd_bob_dsp_top();
         $display("=================================================================");
         $display("                  REPORTE DE AUTOVERIFICACIÓN                    ");
         $display("=================================================================");
-        $display("Muestras utiles recibidas por Vivado: %0d / 1500", out_counter);
+        $display("Muestras utiles recibidas por Vivado: %0d / %0d", out_counter, NUM_SAMPLES_OUT);
         
-        if (out_counter == 1500 && error_counter == 0) begin
+        if (out_counter == NUM_SAMPLES_OUT && error_counter == 0) begin
             $display(" ");
             $display("    [ OK ]  ¡CHECK SUPERADO! ");
             $display("            El hardware coincide al 100%% con el Golden Model.");
@@ -158,8 +172,8 @@ module tb_cvqkd_bob_dsp_top();
         end else begin
             $display(" ");
             $display("    [ X ]   ¡FALLO DE VERIFICACIÓN! ");
-            if (out_counter != 1500)
-                $display("            Error critico: Se esperaban 1500 datos y llegaron %0d", out_counter);
+            if (out_counter != NUM_SAMPLES_OUT)
+                $display("            Error critico: Se esperaban %0d datos y llegaron %0d", NUM_SAMPLES_OUT, out_counter);
             if (error_counter > 0)
                 $display("            Muestras con valores incorrectos: %0d", error_counter);
             $display(" ");

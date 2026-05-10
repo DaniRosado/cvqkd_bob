@@ -20,12 +20,16 @@ module phase_interpolator #(
     logic signed [THETA_WIDTH-1:0] theta_A;
     logic signed [THETA_WIDTH-1:0] delta_theta;
     logic signed [THETA_WIDTH-1:0] acumulador;
+    logic signed [THETA_WIDTH-1:0] numPI;
     logic [3:0] contador_datos;
     
     // Señal interna para el ángulo raw (sin negar ni retrasar)
     logic signed [THETA_WIDTH-1:0] theta_raw;
 
     typedef enum logic [1:0] {ESPERAR_A, ESPERAR_B, INTERPOLAR} state_t;
+    // Constantes Matemáticas en formato Q4.15 (19 bits) para evitar desbordamiento
+    localparam signed [18:0] CONST_PI     = 19'sd102944; // Pi
+    localparam signed [18:0] CONST_TWO_PI = 19'sd205887; // 2 * Pi
     state_t estado_actual;
 
     // =========================================================================
@@ -64,11 +68,24 @@ module phase_interpolator #(
                 
                 INTERPOLAR: begin
                     if (contador_datos > 0) begin
-                        acumulador <= acumulador + delta_theta;
-                        theta_raw  <= acumulador + delta_theta; 
-                        fifo_re    <= 1'b1; // ¡Pedimos el dato a la FIFO!
                         
+                        // Hacemos el chequeo de límites sumando al vuelo (promociona a 19 bits solo para el if)
+                        if ( (acumulador + delta_theta) > CONST_PI ) begin
+                            acumulador <= (acumulador + delta_theta) - CONST_TWO_PI;
+                            theta_raw  <= (acumulador + delta_theta) - CONST_TWO_PI;
+                        end 
+                        else if ( (acumulador + delta_theta) < -CONST_PI ) begin
+                            acumulador <= (acumulador + delta_theta) + CONST_TWO_PI;
+                            theta_raw  <= (acumulador + delta_theta) + CONST_TWO_PI;
+                        end 
+                        else begin
+                            acumulador <= acumulador + delta_theta;
+                            theta_raw  <= acumulador + delta_theta; 
+                        end
+                        
+                        fifo_re <= 1'b1; // ¡Pedimos el dato a la FIFO!
                         contador_datos <= contador_datos - 1'b1;
+                        
                     end else begin
                         // Parche Seamless: Pescar el piloto al vuelo
                         if (valid_in) begin

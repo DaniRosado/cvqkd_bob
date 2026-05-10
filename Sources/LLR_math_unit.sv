@@ -79,7 +79,7 @@ module LLR_math_unit #(
             pipe_v3 <= 1'b0;
         end else begin
             pipe_v3 <= pipe_v2;
-            cov_AB_pure <= ($signed(128'(num_cov_AB)) * INV_2N2) >>> 48;
+            cov_AB_pure <= ($signed(128'(num_cov_AB)) * INV_2N2) >>> 48;       // estamos multiplicando diviendo entre (2*N^2)
             var_B_pure  <= ($signed(128'(num_var_B))  * INV_2N2) >>> 48;
         end
     end
@@ -104,30 +104,29 @@ module LLR_math_unit #(
         .m_axis_dout_tdata(div_t_raw),
         .m_axis_dout_tvalid(div_done)
     );
-    assign T_final = div_t_raw[31:0] << 1;
-
     // 2. Raíz Cuadrada para Sigma = sqrt(sigma_sq)
-    // Debes instanciar el IP "CORDIC 6.0" en modo "Square Root"
     logic [31:0] sqrt_sigma_raw;
     cordic_sqrt_q16_16 sqrt_sigma_inst (
         .aclk(clk),
         .s_axis_cartesian_tdata(sigma_sq),
         .s_axis_cartesian_tvalid(pipe_v3),
         .m_axis_dout_tdata(sqrt_sigma_raw),
-        .m_axis_dout_tvalid() // Podríamos usar este valid también
+        .m_axis_dout_tvalid() // Podríamos usar este valid también si queremos esperar
     );
     assign sigma = sqrt_sigma_raw << 16;
 
-    // 3. Raíz Cuadrada para T_sqrt = sqrt(T)
-    // Esperamos a que salga T del divisor para calcular su raíz
-    logic [31:0] sqrt_t_raw;
-    cordic_sqrt_q16_16 sqrt_t_inst (
-        .aclk(clk),
-        .s_axis_cartesian_tdata(T_final),
-        .s_axis_cartesian_tvalid(div_done),
-        .m_axis_dout_tdata(sqrt_t_raw),
-        .m_axis_dout_tvalid(data_ready) // Esta será nuestra señal final de "Listos"
-    );
-    assign T_sqrt = sqrt_t_raw << 8;
+    // 3. Obtener T (Transmitancia) elevando Sqrt(T) al cuadrado
+    // La salida del divisor en realidad es Sqrt(T*eta)
+    assign T_sqrt = div_t_raw[31:0] << 1;
+    
+    // Multiplicamos para obtener T*eta (Formato Q16.16)
+    logic signed [63:0] t_sq_full;
+    assign t_sq_full = $signed(T_sqrt) * $signed(T_sqrt);
+    
+    // T_final es el cuadrado, desplazado 16 bits para mantener el formato Q16.16
+    assign T_final = t_sq_full[47:16];
+    
+    // Como eliminamos el IP CORDIC extra de T, pasamos la validación directamente
+    assign data_ready = div_done;
 
 endmodule

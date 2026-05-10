@@ -67,10 +67,10 @@ module tb_param_estimator_top();
     // =========================================================================
     initial begin
         // 1. Carga de datos generados por MATLAB
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/ptr_ram.txt", mem_ptr);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/bob_ram.txt", mem_bob);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/alice_ram.txt", mem_alice);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/expected_llr_math.txt", mem_expected);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/ptr_ram.txt", mem_ptr);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_ram.txt", mem_bob);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/alice_ram.txt", mem_alice);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
 
         // 2. Configuración Inicial
         rst = 1; start = 0; ping_pong_bit = 0;
