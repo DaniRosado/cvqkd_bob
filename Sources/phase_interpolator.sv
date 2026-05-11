@@ -61,7 +61,13 @@ module phase_interpolator #(
                 
                 ESPERAR_B: begin
                     if (valid_in) begin
-                        delta_theta <= diff_raw >>> 4;
+                        if (diff_raw > CONST_PI) begin
+                            delta_theta <= (diff_raw - CONST_TWO_PI) >>> 4;
+                        end else if (diff_raw < -CONST_PI) begin
+                            delta_theta <= (diff_raw + CONST_TWO_PI) >>> 4;
+                        end else begin
+                            delta_theta <= diff_raw >>> 4;
+                        end
                         acumulador <= theta_A;
                         contador_datos <= 4'd15;
                         theta_A <= theta_in; 
@@ -92,7 +98,13 @@ module phase_interpolator #(
                     end else begin
                         // Parche Seamless: Pescar el piloto al vuelo
                         if (valid_in) begin
-                            delta_theta <= (theta_in - theta_A) >>> 4;
+                            if (diff_raw > CONST_PI) begin
+                                delta_theta <= (diff_raw - CONST_TWO_PI) >>> 4;
+                            end else if (diff_raw < -CONST_PI) begin
+                                delta_theta <= (diff_raw + CONST_TWO_PI) >>> 4;
+                            end else begin
+                                delta_theta <= diff_raw >>> 4;
+                            end
                             acumulador <= theta_A;
                             contador_datos <= 4'd15;
                             theta_A <= theta_in; 

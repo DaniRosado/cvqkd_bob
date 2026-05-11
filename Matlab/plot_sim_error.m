@@ -1,5 +1,5 @@
 % Script para graficar el error de Vivado leyendo sim_errors.txt
-clear; clc; close all;
+%clear; clc; close all;
 
 file_errors = 'C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_errors.txt';
 

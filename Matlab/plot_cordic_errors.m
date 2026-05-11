@@ -1,5 +1,5 @@
 % Script para graficar los errores masivos del CORDIC de rotación
-clear; clc; close all;
+%clear; clc; close all;
 
 % 1. Cargar el archivo de errores
 disp('Cargando cordic_rot_errors.txt...');
@@ -88,4 +88,25 @@ if ~isempty(idx_error)
 else
     title('¡No hay errores!');
 end
+grid on;
+
+% =========================================================================
+% FIGURA 2: ESTILO CLÁSICO DEL DSP
+% =========================================================================
+figure('Name', 'Error de Fase y Cuantización: Vivado vs MATLAB', 'NumberTitle', 'off', 'Position', [150, 150, 1000, 700]);
+
+% 1. Error Individual de Cuadraturas
+subplot(2, 1, 1);
+plot(out_idx, diff_q, 'b', 'DisplayName', 'Error en Q'); hold on;
+plot(out_idx, diff_p, 'r', 'DisplayName', 'Error en P');
+title('Error Individual de Cuadraturas (Vivado - MATLAB)');
+xlabel('Número de Muestra Útil'); ylabel('Error de Amplitud (Bits ADC)');
+legend; grid on;
+
+% 2. Magnitud Media del Error
+error_medio = (abs(diff_p) + abs(diff_q)) / 2;
+subplot(2, 1, 2);
+plot(out_idx, error_medio, 'k');
+title('Magnitud Media del Error (|Err\_Q| + |Err\_P|) / 2');
+xlabel('Número de Muestra Útil'); ylabel('Error Medio (Bits)');
 grid on;

@@ -23,7 +23,7 @@ module tb_cvqkd_bob_dsp_top();
     logic [31:0] mem_pilotos_esperados [0:3500]; 
     logic [31:0] mem_fase_estimada [0:NUM_SAMPLES_OUT-1]; // NUEVO ARCHIVO
     
-    integer file_out, file_err;
+    integer file_out, file_err, file_phase;
 
     // --- Contadores Datos ---
     integer out_counter = 0;   
@@ -58,6 +58,7 @@ module tb_cvqkd_bob_dsp_top();
     initial begin
         file_out = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_outputs.txt", "w");
         file_err = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_errors.txt", "w");
+        file_phase = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_phase_interp.txt", "w");
     end
 
     // =========================================================================
@@ -118,6 +119,12 @@ module tb_cvqkd_bob_dsp_top();
                 
                 // IMPORTANTE: Le damos la vuelta al ángulo de Vivado porque está negado (-theta_raw)
                 error_fase_interp = $signed(-dut.interp_cordic_theta) - fase_interpolada_esperada;
+                
+                // Guardamos en archivo para graficar en MATLAB
+                if (file_phase != 0) begin
+                    $fdisplay(file_phase, "%0d %0d %0d", fase_datos_count, $signed(-dut.interp_cordic_theta), fase_interpolada_esperada);
+                end
+                
                 if (error_fase_interp < 0) error_fase_interp = -error_fase_interp;
 
                 if (error_fase_interp > max_error_interp) max_error_interp = error_fase_interp;
@@ -156,6 +163,7 @@ module tb_cvqkd_bob_dsp_top();
         @(posedge clk); valid_in <= 1'b0; p_in <= '0; q_in <= '0;
         repeat(100) @(posedge clk);
         $fclose(file_out); if (file_err != 0) $fclose(file_err);
+        if (file_phase != 0) $fclose(file_phase);
         
         $display("\n=================================================================");
         $display("                  REPORTE DE AUTOVERIFICACIÓN                    ");
