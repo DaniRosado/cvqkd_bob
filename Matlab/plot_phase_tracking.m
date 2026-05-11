@@ -26,16 +26,16 @@ ylim([-4, 4]);
 % Gráfica del error de interpolación en el tiempo
 figure('Name', 'Error de Interpolación', 'NumberTitle', 'off', 'Position', [200, 200, 1200, 400]);
 
-% El error bruto puede dar picos de 2*pi cuando Vivado y MATLAB cruzan la 
-% frontera de pi en instantes ligeramente distintos. 
-% Aplicamos un "wrap" para ver el error físico real:
+% Utilizamos la proyección en el plano complejo (fasores) para obtener
+% de forma infalible la diferencia física real entre ambos ángulos
+% y evitar cualquier artefacto por el cruce en +-pi:
 error_fase_bruto = fase_vivado - fase_matlab;
-error_fase_real = mod(error_fase_bruto + pi, 2*pi) - pi;
+error_fase_real = angle(exp(1j * error_fase_bruto));
 
 plot(idx, error_fase_real, 'k');
 title('Error Real de Interpolación (Físico)');
 xlabel('Número de Dato Útil');
 ylabel('Error (Radianes)');
 % Ajustamos los ejes Y a una escala milimétrica para ver el ruido real
-ylim([-0.05, 0.05]);
+
 grid on;

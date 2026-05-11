@@ -27,7 +27,9 @@ module phase_interpolator #(
 
     // NUEVO: Calculamos la diferencia en 19 bits para evitar overflow
     logic signed [18:0] diff_raw;
-    assign diff_raw = theta_in - theta_A;
+    // IMPORTANTE: Extendemos el signo manualmente a 19 bits antes de restar.
+    // Si no, Vivado usa un restador de 18 bits y +pi - (-pi) se desborda.
+    assign diff_raw = $signed({theta_in[THETA_WIDTH-1], theta_in}) - $signed({theta_A[THETA_WIDTH-1], theta_A});
 
     typedef enum logic [1:0] {ESPERAR_A, ESPERAR_B, INTERPOLAR} state_t;
     // Constantes Matemáticas en formato Q4.15 (19 bits) para evitar desbordamiento

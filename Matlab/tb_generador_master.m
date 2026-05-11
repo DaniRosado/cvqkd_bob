@@ -90,8 +90,9 @@ fase_pilotos_raw = atan2(Q_pilotos_rx, P_pilotos_rx);
 fase_pilotos_limpia = unwrap(fase_pilotos_raw);
 
 % 3. Interpolación lineal para estimar la fase de todos los símbolos
-% (interp1 interpola los huecos de los datos basándose en los pilotos)
-fase_estimada = interp1(idx_pilotos, fase_pilotos_raw, (1:N_FIBER)', 'linear');
+% (interp1 interpola los huecos de los datos basándose en los pilotos YA desenrollados)
+fase_estimada = interp1(idx_pilotos, fase_pilotos_limpia, (1:N_FIBER)', 'linear');
+fase_estimada = wrapToPi(fase_estimada); % Envolvemos de vuelta a [-pi, pi]
 fase_estimada_datos = fase_estimada(idx_datos);
 
 % (Pequeño arreglo por si el último símbolo queda fuera de la interpolación)

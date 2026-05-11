@@ -31,6 +31,7 @@ module tb_phase_interpolator();
     integer max_error = 0;
     logic signed [17:0] fase_esperada;
     integer current_error;
+    integer file_out;
 
     // =========================================================================
     // 2. Instanciación del DUT (Design Under Test)
@@ -58,6 +59,12 @@ module tb_phase_interpolator();
     // =========================================================================
     // 4. Proceso Monitor (Comprobador de Resultados)
     // =========================================================================
+    initial begin
+        file_out = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/sim_interpolator_alone.txt", "w");
+        if (file_out == 0) begin
+            $display("ERROR: No se pudo abrir el archivo para escribir.");
+        end
+    end
     always_ff @(negedge clk) begin
         if (cordic_valid) begin
             if (data_count < NUM_DATA_OUT) begin
@@ -71,6 +78,11 @@ module tb_phase_interpolator();
                 // Actualizamos estadísticas
                 if (current_error > max_error) max_error = current_error;
 
+                // Guardar en archivo: [idx, fase_dut, fase_esperada]
+                if (file_out != 0) begin
+                    $fdisplay(file_out, "%0d %0d %0d", data_count, $signed(-cordic_theta), fase_esperada);
+                end
+
                 // Si el error es mayor de 30 unidades, avisamos
                 if (current_error > 30) begin
                     error_count++;
@@ -83,7 +95,7 @@ module tb_phase_interpolator();
                 // Freno de Emergencia si el error es absurdo (desbordamiento)
                 if (current_error > 5000) begin
                      $display("\n[FATAL] Desbordamiento brutal detectado en dato %0d. Parando simulacion.", data_count);
-                     $stop;
+                     //$stop;
                 end
                 
             end
@@ -139,6 +151,7 @@ module tb_phase_interpolator();
             $display("\n    [ X ]  El interpolador acumula error matematico.");
         end
         $display("=================================================================\n");
+        if (file_out != 0) $fclose(file_out);
         $finish;
     end
 
