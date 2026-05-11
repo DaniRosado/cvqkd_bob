@@ -20,11 +20,14 @@ module phase_interpolator #(
     logic signed [THETA_WIDTH-1:0] theta_A;
     logic signed [THETA_WIDTH-1:0] delta_theta;
     logic signed [THETA_WIDTH-1:0] acumulador;
-    logic signed [THETA_WIDTH-1:0] numPI;
     logic [3:0] contador_datos;
     
     // Señal interna para el ángulo raw (sin negar ni retrasar)
     logic signed [THETA_WIDTH-1:0] theta_raw;
+
+    // NUEVO: Calculamos la diferencia en 19 bits para evitar overflow
+    logic signed [18:0] diff_raw;
+    assign diff_raw = theta_in - theta_A;
 
     typedef enum logic [1:0] {ESPERAR_A, ESPERAR_B, INTERPOLAR} state_t;
     // Constantes Matemáticas en formato Q4.15 (19 bits) para evitar desbordamiento
@@ -58,7 +61,7 @@ module phase_interpolator #(
                 
                 ESPERAR_B: begin
                     if (valid_in) begin
-                        delta_theta <= (theta_in - theta_A) >>> 4;
+                        delta_theta <= diff_raw >>> 4;
                         acumulador <= theta_A;
                         contador_datos <= 4'd15;
                         theta_A <= theta_in; 

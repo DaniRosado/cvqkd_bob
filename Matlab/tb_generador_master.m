@@ -91,7 +91,8 @@ fase_pilotos_limpia = unwrap(fase_pilotos_raw);
 
 % 3. Interpolación lineal para estimar la fase de todos los símbolos
 % (interp1 interpola los huecos de los datos basándose en los pilotos)
-fase_estimada = interp1(idx_pilotos, fase_pilotos_limpia, (1:N_FIBER)', 'linear');
+fase_estimada = interp1(idx_pilotos, fase_pilotos_raw, (1:N_FIBER)', 'linear');
+fase_estimada_datos = fase_estimada(idx_datos);
 
 % (Pequeño arreglo por si el último símbolo queda fuera de la interpolación)
 fase_estimada(isnan(fase_estimada)) = fase_estimada(find(~isnan(fase_estimada), 1, 'last'));
@@ -194,6 +195,24 @@ disp('========================================================================')
 
 if ENABLE_EXPORT_VIVADO
     disp('7. Exportando RAMs para Testbench de Vivado...');
+
+    fase_estimada_datos = fase_estimada(idx_datos);
+    fase_est_q15 = int32(round(fase_estimada_datos * 32768));
+
+    fid_est = fopen('fase_estimada_datos.txt', 'w');
+    for i=1:length(fase_est_q15)
+        fprintf(fid_est, '%08X\n', typecast(fase_est_q15(i), 'uint32'));
+    end
+    fclose(fid_est);
+
+    fases_q15 = int32(round(fase_pilotos_raw * 32768));
+    
+    fid_pil = fopen('fase_pilotos_raw.txt', 'w');
+    for i=1:length(fases_q15)
+        % Guardamos en Hexadecimal de 32 bits (aunque la FPGA usará los 18 bajos)
+        fprintf(fid_pil, '%08X\n', typecast(fases_q15(i), 'uint32'));
+    end
+    fclose(fid_pil);
     
     fid_ptr = fopen('ptr_ram.txt', 'w');
     for i=1:N_SAMPLES, fprintf(fid_ptr, '%04X\n', punteros(i)); end; fclose(fid_ptr);
