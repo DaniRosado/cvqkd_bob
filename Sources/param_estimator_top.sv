@@ -10,14 +10,21 @@ module param_estimator_top #(
     input  logic        ping_pong_bit,
     output logic        done,
     
-    output logic [14:0] ptr_addr,
-    input  logic [15:0] ptr_data,
+    output logic [14:0] ptr_addr,       // i
+    input  logic [15:0] ptr_data,       // Dato i de Bob (B)
     
-    output logic [16:0] bob_addr,
-    input  logic [31:0] bob_data,
+    output logic [16:0] bob_addr,       // Dirección de datos de Bob (B)
+    input  logic [31:0] bob_data,       // Datos de Bob (B) 
     
-    output logic [14:0] alice_addr,
-    input  logic [31:0] alice_data,
+    output logic [14:0] alice_addr,     // Dirección de datos de Alice (A)
+    input  logic [31:0] alice_data,     // Datos de Alice (A)
+    
+    // =================================================================
+    // CONTROL DE FLUJO ON-THE-FLY
+    // =================================================================
+    input  logic [15:0] alice_items_avail, // Datos disponibles en Alice
+    input  logic [15:0] bob_items_avail,   // Datos disponibles en Bob Ptr RAM
+
     
     // =================================================================
     // ENTRADAS DE CALIBRACIÓN (Reducidas solo a lo necesario para LLR)
@@ -56,6 +63,8 @@ module param_estimator_top #(
         .done(done),
         .ptr_addr(ptr_addr), .ptr_data(ptr_data),
         .bob_addr(bob_addr), .alice_addr(alice_addr),
+        .alice_items_avail(alice_items_avail),
+        .bob_items_avail(bob_items_avail),
         .mac_clear(mac_clear), .mac_enable(mac_enable)
     );
 

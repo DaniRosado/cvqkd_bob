@@ -6,10 +6,9 @@ module fsm_estimator #(
     input  logic        clk,
     input  logic        rst,
     
-    input  logic        start,
-    input  logic        ping_pong_bit,
+    input  logic        start,      // Inicio del proceso
+    input  logic        ping_pong_bit,  // A o B
     
-    // NUEVO: Señales de interacción con el bloque final_math_unit
     output logic        start_math, // Dispara las divisiones finales
     input  logic        math_done,  // Avisa de que T y xi están listos
     
@@ -19,8 +18,12 @@ module fsm_estimator #(
     input  logic [15:0] ptr_data,
     output logic [16:0] bob_addr,
     output logic [14:0] alice_addr,
-    output logic        mac_clear,
-    output logic        mac_enable
+    
+    input  logic [15:0] alice_items_avail,
+    input  logic [15:0] bob_items_avail,
+    
+    output logic        mac_clear,  // Limpia el acumulador
+    output logic        mac_enable  // Habilita la suma
 );
 
     // Añadimos el nuevo estado MATH_WAIT
@@ -28,7 +31,7 @@ module fsm_estimator #(
         IDLE,
         RUN,
         DRAIN,
-        MATH_WAIT, // <--- NUEVO ESTADO
+        MATH_WAIT,
         DONE
     } state_t;
     
@@ -59,8 +62,11 @@ module fsm_estimator #(
                 counter       <= '0;
                 drain_counter <= '0;
             end else if (state == RUN) begin
-                if (counter < NUM_SAMPLES - 1) begin
-                    counter <= counter + 1'b1;
+                // Solo incrementamos si hay datos listos en ambas memorias
+                if (counter < alice_items_avail && counter < bob_items_avail) begin
+                    if (counter < NUM_SAMPLES - 1) begin
+                        counter <= counter + 1'b1;
+                    end
                 end
             end else if (state == DRAIN) begin
                 drain_counter <= drain_counter + 1'b1;
@@ -82,8 +88,11 @@ module fsm_estimator #(
             end
             
             RUN: begin
-                active_flag = 1'b1;
-                if (counter == NUM_SAMPLES - 1) next_state = DRAIN;
+                // Solo activamos el pipeline y comprobamos fin de cuenta si hay datos
+                if (counter < alice_items_avail && counter < bob_items_avail) begin
+                    active_flag = 1'b1;
+                    if (counter == NUM_SAMPLES - 1) next_state = DRAIN;
+                end
             end
             
             DRAIN: begin

@@ -21,6 +21,10 @@ module tb_param_estimator_top();
     // Salidas Finales (Q16.16)
     logic signed [31:0] T_est, T_sqrt_est, sigma_sq_est, sigma_est;
 
+    // Control de flujo On-the-fly
+    logic [15:0] alice_items_avail;
+    logic [15:0] bob_items_avail;
+
     // =========================================================================
     // ARRAYS DE MEMORIA (Emulación de BRAMs)
     // =========================================================================
@@ -39,6 +43,9 @@ module tb_param_estimator_top();
         .ptr_addr(ptr_addr), .ptr_data(ptr_data),
         .bob_addr(bob_addr), .bob_data(bob_data),
         .alice_addr(alice_addr), .alice_data(alice_data),
+        
+        .alice_items_avail(alice_items_avail),
+        .bob_items_avail(bob_items_avail),
         
         .calib_VarA(calib_VarA),
         
@@ -60,6 +67,32 @@ module tb_param_estimator_top();
         ptr_data   <= mem_ptr[ptr_addr];
         bob_data   <= mem_bob[bob_addr[15:0]]; // Usamos solo 16 bits para indexar
         alice_data <= mem_alice[alice_addr];
+    end
+
+    // =========================================================================
+    // EMULACIÓN DE LLEGADA DE DATOS ON-THE-FLY
+    // =========================================================================
+    initial begin
+        alice_items_avail = 0;
+        bob_items_avail = 0;
+        wait(rst == 0);
+        
+        fork
+            // Emulamos recepción de red (Alice)
+            begin
+                while (alice_items_avail < TEST_SAMPLES) begin
+                    @(posedge clk);
+                    if ($random % 4 != 0) alice_items_avail++; // A veces se pausa la red
+                end
+            end
+            // Emulamos el generador de Bob
+            begin
+                while (bob_items_avail < TEST_SAMPLES) begin
+                    @(posedge clk);
+                    if ($random % 2 != 0) bob_items_avail++; // Generador más lento
+                end
+            end
+        join
     end
 
     // =========================================================================

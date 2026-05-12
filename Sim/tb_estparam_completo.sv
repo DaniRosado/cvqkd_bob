@@ -41,10 +41,20 @@ module tb_estparam_completo();
     logic [14:0] alice_rd_addr;
     logic [31:0] alice_rd_data;
     
-    // Punteros (Emulados en array para simplificar, con 1 ciclo latencia)
-    logic [15:0] mem_ptr [0:N_SAMPLES-1];
+    // Punteros (A sustituir por el hardware real)
     logic [14:0] ptr_rd_addr;
     logic [15:0] ptr_rd_data;
+    
+    // Control de flujo On-the-fly
+    logic [15:0] alice_items_avail;
+    logic [15:0] bob_items_avail;
+    
+    // Interfaz generador -> ptr_ram
+    logic mask_valid;
+    logic mask_bit;
+    logic [15:0] gen_ram_addr;
+    logic        gen_read_en;
+    logic        gen_done;
 
     logic [31:0] mem_expected[0:3]; 
     logic [31:0] calib_VarA;
@@ -80,18 +90,40 @@ module tb_estparam_completo();
         .buffer_ready_irq(irq_buffer_ready), .buffer_to_read(irq_buffer_side)
     );
 
-    // 3.3. Memoria de Alice (Buffer BRAM)
+    // 3.3. Memoria de Alice (Buffer BRAM con control de flujo)
     alice_bram_buffer #(
         .DATA_WIDTH(32), .ADDR_WIDTH(15)
     ) alice_ram_inst (
-        .clk_wr(clk), .we(alice_we), .wr_addr(alice_wr_addr), .wr_data(alice_wr_data),
-        .clk_rd(clk), .rd_addr(alice_rd_addr), .rd_data(alice_rd_data)
+        .clk_wr(clk), .rst_wr(rst),
+        .we(alice_we), .wr_addr(alice_wr_addr), .wr_data(alice_wr_data),
+        
+        .clk_rd(clk), .rst_rd(rst),
+        .rd_addr(alice_rd_addr), .rd_data(alice_rd_data),
+        
+        .items_avail(alice_items_avail)
     );
 
-    // Latencia BRAM de Punteros
-    always_ff @(posedge clk) begin
-        ptr_rd_data <= mem_ptr[ptr_rd_addr];
-    end
+    // 3.4. Generador de Direcciones de Bob
+    generador_direcciones_sacrificio #(
+        .N_TOTAL_DATOS(N_BOB_DATA)
+    ) gen_dir_inst (
+        .clk(clk), .rst(rst),
+        .mask_valid(mask_valid), .mask_bit(mask_bit),
+        .ram_addr(gen_ram_addr), .read_en(gen_read_en), .done(gen_done)
+    );
+
+    // 3.5. Memoria de Punteros de Bob (ptr_ram_buffer)
+    ptr_ram_buffer #(
+        .DATA_WIDTH(16), .ADDR_WIDTH(15)
+    ) ptr_ram_inst (
+        .clk_wr(clk), .rst_wr(rst),
+        .we(gen_read_en), .wr_data(gen_ram_addr),
+        
+        .clk_rd(clk), .rst_rd(rst),
+        .rd_addr(ptr_rd_addr), .rd_data(ptr_rd_data),
+        
+        .items_avail(bob_items_avail)
+    );
 
     logic est_start;
     logic est_side;
@@ -124,6 +156,9 @@ module tb_estparam_completo();
         .bob_addr(bob_read_addr), .bob_data(bob_read_data),
         .alice_addr(alice_rd_addr), .alice_data(alice_rd_data),
         
+        .alice_items_avail(alice_items_avail),
+        .bob_items_avail(bob_items_avail),
+        
         .calib_VarA(calib_VarA),
         
         .T_estimated(T_est), 
@@ -139,32 +174,57 @@ module tb_estparam_completo();
         clk = 0; forever #5 clk = ~clk;
     end
 
-    // Memoria temporal para cargar Alice
+    // Memoria temporal para cargar Alice y la Máscara
     logic [31:0] mem_alice_file [0:N_SAMPLES-1];
+    logic        mask_mem [0:N_BOB_DATA-1];
 
     initial begin
         // 1. Cargamos archivos de MATLAB
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_raw_adc.txt", mem_adc);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/ptr_ram.txt", mem_ptr);
+        $readmemb("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/mask_bit.txt", mask_mem);
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/alice_ram.txt", mem_alice_file);
         $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
 
         rst = 1; adc_valid = 0; adc_ptr = 0; calib_VarA = 32'd40000; alice_we = 0;
-        adc_q = 0; adc_p = 0;
+        adc_q = 0; adc_p = 0; mask_valid = 0; mask_bit = 0;
         #50 rst = 0;
         
         $display("\n=======================================================");
         $display("[INFO] Iniciando Simulacion Sistema End-to-End...");
         
-        // 2. Simular CPU (DMA) cargando la memoria de Alice ANTES de empezar
-        $display("[INFO] 1. Pre-cargando Memoria de Alice...");
-        for (int i=0; i<N_SAMPLES; i++) begin
-            @(posedge clk);
-            alice_we <= 1'b1;
-            alice_wr_addr <= i;
-            alice_wr_data <= mem_alice_file[i];
-        end
-        @(posedge clk) alice_we <= 1'b0;
+        // 2. Simular carga de datos y máscara (On-the-fly concurrente)
+        $display("[INFO] 1. Emulando la llegada progresiva de Alice y la Mascara de Bob...");
+        
+        fork
+            // CPU cargando Alice lentamente
+            begin
+                for (int i=0; i<N_SAMPLES; i++) begin
+                    @(posedge clk);
+                    alice_we <= 1'b1;
+                    alice_wr_addr <= i;
+                    alice_wr_data <= mem_alice_file[i];
+                    if ($random % 5 == 0) begin
+                        @(posedge clk) alice_we <= 1'b0;
+                        @(posedge clk);
+                    end
+                end
+                @(posedge clk) alice_we <= 1'b0;
+            end
+            
+            // Microcontrolador inyectando máscara al generador
+            begin
+                for (int i=0; i<N_BOB_DATA; i++) begin
+                    @(posedge clk);
+                    mask_valid <= 1'b1;
+                    mask_bit <= mask_mem[i];
+                    if ($random % 4 == 0) begin
+                        @(posedge clk) mask_valid <= 1'b0;
+                        @(posedge clk);
+                    end
+                end
+                @(posedge clk) mask_valid <= 1'b0;
+            end
+        join_none
 
         // 3. Streaming de datos del ADC hacia el DSP
         $display("[INFO] 2. Inyectando %0d muestras de fibra al DSP...", N_FIBER);

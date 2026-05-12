@@ -1,44 +1,54 @@
 `timescale 1ns / 1ps
 
-module alice_bram_buffer #(
-    parameter DATA_WIDTH = 32,    // 16 bits Q_A + 16 bits P_A
+module ptr_ram_buffer #(
+    parameter DATA_WIDTH = 16,    // 16 bits para almacenar ram_addr
     parameter ADDR_WIDTH = 15     // 2^15 = 32768 posiciones totales
 )(
     // =========================================================
-    // PUERTO A: ESCRITURA (Conectado al DMA / Red Ethernet)
+    // PUERTO A: ESCRITURA (Conectado a generador_direcciones_bob)
     // =========================================================
-    input  logic                  clk_wr,     // Reloj del bus del procesador
-    input  logic                  rst_wr,     // Reset del dominio de escritura
-    input  logic                  we,         // Write Enable (Habilita la escritura)
-    input  logic [ADDR_WIDTH-1:0] wr_addr,    // Dirección donde guardar (0 a 26111)
-    input  logic [DATA_WIDTH-1:0] wr_data,    // Dato que llega de Alice {Q_A, P_A}
+    input  logic                  clk_wr,
+    input  logic                  rst_wr,
+    input  logic                  we,         // Conectar al 'read_en' del generador
+    input  logic [DATA_WIDTH-1:0] wr_data,    // Conectar al 'ram_addr' del generador
 
     // =========================================================
-    // PUERTO B: LECTURA (Conectado a tu Acelerador Matemático)
+    // PUERTO B: LECTURA (Conectado al param_estimator / FSM)
     // =========================================================
-    input  logic                  clk_rd,     // Reloj del DSP (100 MHz)
-    input  logic                  rst_rd,     // Reset del dominio de lectura
-    input  logic [ADDR_WIDTH-1:0] rd_addr,    // Dirección que el acelerador quiere leer
-    output logic [DATA_WIDTH-1:0] rd_data,    // Dato extraído hacia los multiplicadores
+    input  logic                  clk_rd,
+    input  logic                  rst_rd,
+    input  logic [ADDR_WIDTH-1:0] rd_addr,    // Conectar al 'ptr_addr' del FSM
+    output logic [DATA_WIDTH-1:0] rd_data,    // Conectar al 'ptr_data' del FSM
     
     // =========================================================
     // CONTROL DE FLUJO ON-THE-FLY
     // =========================================================
-    output logic [ADDR_WIDTH:0]   items_avail // Cantidad de datos listos (Sincronizado a clk_rd)
+    output logic [ADDR_WIDTH:0]   items_avail // Datos listos (Sincronizado a clk_rd)
 );
 
     // INFERENCIA DE MEMORIA BRAM
     // Obligamos a Vivado a usar RAM física en el silicio
     (* ram_style = "block" *) logic [DATA_WIDTH-1:0] ram [0:(1<<ADDR_WIDTH)-1];
 
-    // LÓGICA DE ESCRITURA
+    // =========================================================
+    // LÓGICA DE ESCRITURA Y AUTO-INCREMENTO
+    // =========================================================
+    logic [ADDR_WIDTH:0] wr_count;
+
     always_ff @(posedge clk_wr) begin
-        if (we) begin
-            ram[wr_addr] <= wr_data;
+        if (rst_wr) begin
+            wr_count <= '0;
+        end else if (we) begin
+            // Guardamos la dirección generada en nuestra memoria interna
+            ram[wr_count[ADDR_WIDTH-1:0]] <= wr_data;
+            // Avanzamos el puntero de escritura automáticamente
+            wr_count <= wr_count + 1'b1;
         end
     end
 
+    // =========================================================
     // LÓGICA DE LECTURA (Latencia de 1 ciclo)
+    // =========================================================
     always_ff @(posedge clk_rd) begin
         rd_data <= ram[rd_addr];
     end
@@ -46,27 +56,15 @@ module alice_bram_buffer #(
     // =========================================================
     // LÓGICA DE CRUCE DE DOMINIOS (CDC) PARA CONTROL DE FLUJO
     // =========================================================
-    logic [ADDR_WIDTH:0] wr_count;
     logic [ADDR_WIDTH:0] wr_count_gray;
-
-    // Sincronizadores en el dominio de lectura
     logic [ADDR_WIDTH:0] wr_count_gray_sync1;
     logic [ADDR_WIDTH:0] wr_count_gray_sync2;
     logic [ADDR_WIDTH:0] rd_items_avail_bin;
 
-    // 1. Contador de escritura binario
-    always_ff @(posedge clk_wr) begin
-        if (rst_wr) begin
-            wr_count <= '0;
-        end else if (we) begin
-            wr_count <= wr_count + 1'b1;
-        end
-    end
-
-    // 2. Conversión Binario a Gray (Dominio clk_wr)
+    // 1. Conversión Binario a Gray (Dominio clk_wr)
     assign wr_count_gray = (wr_count >> 1) ^ wr_count;
 
-    // 3. Sincronizador de doble registro (Dominio clk_rd)
+    // 2. Sincronizador de doble registro (Dominio clk_rd)
     always_ff @(posedge clk_rd) begin
         if (rst_rd) begin
             wr_count_gray_sync1 <= '0;
@@ -77,7 +75,7 @@ module alice_bram_buffer #(
         end
     end
 
-    // 4. Conversión Gray a Binario (Dominio clk_rd)
+    // 3. Conversión Gray a Binario (Dominio clk_rd)
     always_comb begin
         rd_items_avail_bin[ADDR_WIDTH] = wr_count_gray_sync2[ADDR_WIDTH];
         for (int i = ADDR_WIDTH-1; i >= 0; i--) begin
@@ -85,7 +83,7 @@ module alice_bram_buffer #(
         end
     end
 
-    // 5. Asignación de salida segura
+    // 4. Asignación de salida segura hacia el FSM
     assign items_avail = rd_items_avail_bin;
 
 endmodule

@@ -93,7 +93,7 @@ fase_pilotos_limpia = unwrap(fase_pilotos_raw);
 % (interp1 interpola los huecos de los datos basándose en los pilotos YA desenrollados)
 fase_estimada = interp1(idx_pilotos, fase_pilotos_limpia, (1:N_FIBER)', 'linear');
 fase_estimada = wrapToPi(fase_estimada); % Envolvemos de vuelta a [-pi, pi]
-fase_estimada_datos = fase_estimada(idx_datos);
+%fase_estimada_datos = fase_estimada(idx_datos);
 
 % (Pequeño arreglo por si el último símbolo queda fuera de la interpolación)
 fase_estimada(isnan(fase_estimada)) = fase_estimada(find(~isnan(fase_estimada), 1, 'last'));
@@ -120,7 +120,11 @@ P_B_int = int16(round(P_B_rec));  Q_B_int = int16(round(Q_B_rec));
 
 %% 6. SELECCIÓN DE PUNTEROS Y ESTIMACIÓN FLOTANTE (MATLAB IDEAL)
 disp('5. Seleccionando muestras de sacrificio y calculando métricas...');
-punteros = randperm(N_BOB_DATA, N_SAMPLES)' - 1;
+punteros = sort(randperm(N_BOB_DATA, N_SAMPLES)') - 1;
+
+% Máscara de sacrificio (1 = sacrificar, 0 = mantener)
+mascara_sacrificio = zeros(N_BOB_DATA, 1);
+mascara_sacrificio(punteros + 1) = 1;
 
 % Sacamos las muestras correlacionadas usando los punteros
 P_B_sac = P_B_int(punteros + 1); Q_B_sac = Q_B_int(punteros + 1);
@@ -217,6 +221,9 @@ if ENABLE_EXPORT_VIVADO
     
     fid_ptr = fopen('ptr_ram.txt', 'w');
     for i=1:N_SAMPLES, fprintf(fid_ptr, '%04X\n', punteros(i)); end; fclose(fid_ptr);
+    
+    fid_mask = fopen('mask_bit.txt', 'w');
+    for i=1:N_BOB_DATA, fprintf(fid_mask, '%d\n', mascara_sacrificio(i)); end; fclose(fid_mask);
     
     fid_bob = fopen('bob_ram.txt', 'w');
     for i=1:N_BOB_DATA, fprintf(fid_bob, '%04X%04X\n', typecast(Q_B_int(i), 'uint16'), typecast(P_B_int(i), 'uint16')); end; fclose(fid_bob);
