@@ -149,7 +149,7 @@ sum_Q_B = sum(int64(Q_B_sac)); sum_sq_Q_B = sum(int64(Q_B_sac).^2);
 sum_P_A = sum(int64(P_A_sac)); sum_cov_P  = sum(int64(P_A_sac) .* int64(P_B_sac));
 sum_Q_A = sum(int64(Q_A_sac)); sum_cov_Q  = sum(int64(Q_A_sac) .* int64(Q_B_sac));
 
-N_int = int64(N_SAMPLES); INV_2N2 = int64(round(2^45 / ((N_SAMPLES/2)^2)));
+N_int = int64(N_SAMPLES); INV_2N2 = int64(206409);
 cross_P_AB = sum_P_A * sum_P_B; cross_Q_AB = sum_Q_A * sum_Q_B;
 sq_sum_P_B = sum_P_B * sum_P_B; sq_sum_Q_B = sum_Q_B * sum_Q_B;
 
@@ -159,7 +159,7 @@ num_var_B  = (N_int * (sum_sq_P_B + sum_sq_Q_B)) - (sq_sum_P_B + sq_sum_Q_B);
 cov_AB_pure = bitshift(typecast(uint64(num_cov_AB) .* uint64(INV_2N2), 'int64'), -48); 
 var_B_pure  = bitshift(typecast(uint64(num_var_B)  .* uint64(INV_2N2), 'int64'), -48);
 
-Sigma_Sq_fp  = var_B_pure;
+Sigma_Sq_fp  = var_B_pure - T_eta_ideal*;
 T_raw_15bits = bitshift(cov_AB_pure * 32768, 0) / int64(VarA_adc);
 Sqrt_T_eta_fp = T_raw_15bits * 2;
 T_eta_fp = bitshift(int64(Sqrt_T_eta_fp)^2, -16);
@@ -279,6 +279,7 @@ syndrome_1 = mod(H * double(block_1), 2);
 num_errores_syndrome = sum(syndrome_1);
 
 fprintf('   [!] Bits de Síndrome activos (Ecuaciones fallidas): %d / %d\n', num_errores_syndrome, mb*Z);
+disp('   (Nota: Es normal que haya fallos, ya que aún no hemos aplicado la decodificación LDPC iterativa)');
 
 %% 11. TABLA DE RESULTADOS Y EXPORTACIÓN
 disp('============================================================================');

@@ -5,9 +5,9 @@ module tb_estparam_completo();
     // =========================================================================
     // PARÁMETROS DEL SISTEMA
     // =========================================================================
-    localparam N_SAMPLES  = 26112; 
-    localparam N_BOB_DATA = 52224;
-    localparam N_FIBER    = 55713; // (3482 tramas * 16) + 1 piloto final
+    localparam N_SAMPLES  = 26112/2; 
+    localparam N_BOB_DATA = 52224/2;
+    localparam N_FIBER    = 27857; // (3482 tramas * 16) + 1 piloto final
     
     logic clk;
     logic rst;

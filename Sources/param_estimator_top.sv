@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module param_estimator_top #(
-    parameter NUM_SAMPLES = 26112
+    parameter NUM_SAMPLES = 26112/2
 )(
     input  logic        clk,
     input  logic        rst,

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module LLR_math_unit #(
-    parameter signed [63:0] N_SAMPLES = 64'sd26112,
+    parameter signed [63:0] N_SAMPLES = 64'sd13056,
     // (2^48) / (2 * 26112^2) = 206408.84 -> 206409
     parameter signed [63:0] INV_2N2   = 64'sd206409 
 )(
