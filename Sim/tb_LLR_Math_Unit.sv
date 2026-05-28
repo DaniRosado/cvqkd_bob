@@ -59,8 +59,8 @@ module tb_LLR_Math_Unit();
     // =========================================================================
     initial begin
         // 1. CARGA DE ARCHIVOS
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/accumulators.txt", mem_accumulators);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Sim/expected_llr_math.txt", mem_expected);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/accumulators.txt", mem_accumulators);
+        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
         
         // 2. CONDICIONES INICIALES
         rst        = 1'b1;
