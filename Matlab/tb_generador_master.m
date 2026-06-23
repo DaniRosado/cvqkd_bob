@@ -254,7 +254,7 @@ fprintf('   -> Mapeo finalizado. Errores antes del LDPC (QBER): %.2f%%\n', QBER)
 
 
 %% 10. Carga y expansión de la matriz LDPC
-bg_matrix = load('C:/Users/usser/Vivado_Sources/cvqkd_bob/NR_1_1_384.txt');
+bg_matrix = load('/home/drg/TFG/cvqkd_code/cvqkd_bob/NR_1_1_384.txt');
 [mb, nb] = size(bg_matrix);
 Z = 384;
 
