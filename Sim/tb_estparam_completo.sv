@@ -56,7 +56,7 @@ module tb_estparam_completo();
     logic        gen_read_en;
     logic        gen_done;
 
-    logic [31:0] mem_expected[0:3]; 
+    logic [31:0] mem_expected[0:3];
     logic [31:0] calib_VarA;
 
     // =========================================================================
@@ -64,6 +64,7 @@ module tb_estparam_completo();
     // =========================================================================
     logic        est_done;
     logic [31:0] T_est, T_sqrt_est, sigma_sq_est, sigma_est;
+    integer      file_handle;
 
     // =========================================================================
     // 3. INSTANCIACIÓN DEL HARDWARE
@@ -179,11 +180,38 @@ module tb_estparam_completo();
     logic        mask_mem [0:N_BOB_DATA-1];
 
     initial begin
-        // 1. Cargamos archivos de MATLAB
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_raw_adc.txt", mem_adc);
-        $readmemb("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/mask_bit.txt", mask_mem);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/alice_ram.txt", mem_alice_file);
-        $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
+        // 1. Cargamos archivos de MATLAB (Compatible Windows/Linux)
+        file_handle = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_raw_adc.txt", "r");
+        if (file_handle != 0) begin
+            $fclose(file_handle);
+            $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/bob_raw_adc.txt", mem_adc);
+        end else begin
+            $readmemh("/home/drg/tmp/cvqkd_bob/Matlab/bob_raw_adc.txt", mem_adc);
+        end
+
+        file_handle = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/mask_bit.txt", "r");
+        if (file_handle != 0) begin
+            $fclose(file_handle);
+            $readmemb("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/mask_bit.txt", mask_mem);
+        end else begin
+            $readmemb("/home/drg/tmp/cvqkd_bob/Matlab/mask_bit.txt", mask_mem);
+        end
+
+        file_handle = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/alice_ram.txt", "r");
+        if (file_handle != 0) begin
+            $fclose(file_handle);
+            $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/alice_ram.txt", mem_alice_file);
+        end else begin
+            $readmemh("/home/drg/tmp/cvqkd_bob/Matlab/alice_ram.txt", mem_alice_file);
+        end
+
+        file_handle = $fopen("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", "r");
+        if (file_handle != 0) begin
+            $fclose(file_handle);
+            $readmemh("C:/Users/usser/Vivado_Sources/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
+        end else begin
+            $readmemh("/home/drg/tmp/cvqkd_bob/Matlab/expected_llr_math.txt", mem_expected);
+        end
 
         rst = 1; adc_valid = 0; adc_ptr = 0; calib_VarA = 32'd40000; alice_we = 0;
         adc_q = 0; adc_p = 0; mask_valid = 0; mask_bit = 0;

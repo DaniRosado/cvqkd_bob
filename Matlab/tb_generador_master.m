@@ -210,7 +210,7 @@ X = zeros(N_dimensiones, N_bloques);
 
 Y(1:2:end, :) = P_B_mat; Y(2:2:end, :) = Q_B_mat;
 X(1:2:end, :) = P_A_mat; X(2:2:end, :) = Q_A_mat;
-
+3
 % 4. Inicialización de variables
 bits_bob_all = zeros(N_dimensiones, N_bloques); % Bits lógicos (0 y 1)
 LLR_all      = zeros(N_dimensiones, N_bloques);
